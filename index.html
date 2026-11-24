@@ -1,0 +1,2853 @@
+```html
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mapa de Transformadores — Rede Elétrica</title>
+
+    <!-- Leaflet CSS com Fallback Duplo Automático -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';" />
+
+    <style>
+        /* =====================================================================
+           1. PALETA ESCURA DE ALTO CONTRASTE & LAYOUT TELA CHEIA (100DVH)
+           ===================================================================== */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        :root {
+            --bg-canvas: #081216;
+            --surface-primary: #0f2228;
+            --surface-secondary: #132a30;
+            --border-neon: rgba(0, 255, 102, 0.32);
+            --accent-green: #00ff66;
+            --accent-purple: #8000ff;
+            --accent-purple-light: #a855f7;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100dvh;
+            overflow: hidden;
+            background: var(--bg-canvas);
+            color: var(--text-main);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            user-select: none;
+        }
+
+        #map {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100dvh;
+            z-index: 1;
+            background: var(--bg-canvas);
+        }
+
+        .leaflet-control-zoom,
+        .leaflet-control-attribution {
+            display: none !important;
+        }
+
+        /* =====================================================================
+           2. BARRA DE BUSCA FLUTUANTE NO TOPO + RESULTADOS INSTANTÂNEOS
+           ===================================================================== */
+        .search-wrapper {
+            position: fixed;
+            top: max(12px, env(safe-area-inset-top, 12px));
+            left: 50%;
+            transform: translateX(-50%);
+            width: calc(100vw - 24px);
+            max-width: 480px;
+            z-index: 30;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .search-bar {
+            display: flex;
+            align-items: center;
+            background: rgba(15, 34, 40, 0.94);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1.5px solid var(--border-neon);
+            border-radius: 14px;
+            padding: 4px 12px;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.78);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .search-bar:focus-within {
+            border-color: var(--accent-green);
+            box-shadow: 0 10px 30px rgba(0, 255, 102, 0.2);
+        }
+
+        .search-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent-green);
+            margin-right: 9px;
+            flex-shrink: 0;
+        }
+
+        .search-input {
+            flex: 1;
+            width: 100%;
+            height: 40px;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text-main);
+            font-size: 14.5px;
+            font-weight: 500;
+            user-select: text;
+        }
+
+        .search-input::placeholder {
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .search-clear-btn {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(148, 163, 184, 0.16);
+            color: var(--text-main);
+            font-size: 14px;
+            cursor: pointer;
+            margin-left: 6px;
+            flex-shrink: 0;
+        }
+
+        .search-clear-btn.visible {
+            display: flex;
+        }
+
+        .search-results {
+            display: none;
+            flex-direction: column;
+            max-height: min(52dvh, 350px);
+            overflow-y: auto;
+            background: rgba(15, 34, 40, 0.97);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(0, 255, 102, 0.35);
+            border-radius: 14px;
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.88);
+            overscroll-behavior: contain;
+        }
+
+        .search-results.open {
+            display: flex;
+        }
+
+        .result-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 11px 14px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+            cursor: pointer;
+            transition: background 0.14s ease;
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .result-item:active,
+        .result-item:hover {
+            background: rgba(0, 255, 102, 0.11);
+        }
+
+        .result-info {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .result-code {
+            font-size: 14px;
+            font-weight: 800;
+            color: var(--accent-green);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .result-circuit {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .result-meta {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            flex-shrink: 0;
+            gap: 3px;
+        }
+
+        .result-dist {
+            font-size: 11px;
+            font-weight: 700;
+            color: #f3e8ff;
+            background: rgba(128, 0, 255, 0.3);
+            border: 1px solid rgba(168, 85, 247, 0.6);
+            padding: 2px 7px;
+            border-radius: 999px;
+        }
+
+        .result-go {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent-green);
+        }
+
+        .search-empty {
+            padding: 16px;
+            text-align: center;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        /* =====================================================================
+           3. BANNER DE CARREGAMENTO & FALLBACK LOCAL DE JSON (FILE:// CORS)
+           ===================================================================== */
+        .json-status-banner {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            background: rgba(19, 42, 48, 0.96);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(168, 85, 247, 0.55);
+            border-radius: 12px;
+            padding: 10px 12px;
+            box-shadow: 0 10px 26px rgba(0, 0, 0, 0.82);
+            font-size: 12px;
+            line-height: 1.4;
+            color: #e2e8f0;
+        }
+
+        .json-status-banner.visible {
+            display: flex;
+        }
+
+        .json-status-text {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .json-status-text strong {
+            color: var(--accent-green);
+            display: block;
+            font-size: 12.5px;
+            margin-bottom: 2px;
+        }
+
+        .btn-pick-json {
+            flex-shrink: 0;
+            background: linear-gradient(135deg, var(--accent-purple) 0%, #6b21a8 100%);
+            color: #ffffff;
+            border: 1px solid rgba(216, 180, 254, 0.5);
+            border-radius: 9px;
+            padding: 8px 11px;
+            font-size: 11.5px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(128, 0, 255, 0.35);
+            transition: transform 0.14s ease;
+        }
+
+        .btn-pick-json:active {
+            transform: scale(0.95);
+        }
+
+        .spinner-dot {
+            width: 14px;
+            height: 14px;
+            border: 2.5px solid rgba(0, 255, 102, 0.25);
+            border-top-color: var(--accent-green);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* =====================================================================
+           4. BOTÃO FLUTUANTE DE "MINHA LOCALIZAÇÃO" (GPS)
+           ===================================================================== */
+        .btn-my-location {
+            position: fixed;
+            right: 14px;
+            bottom: max(22px, env(safe-area-inset-bottom, 22px));
+            z-index: 28;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(15, 34, 40, 0.95);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1.5px solid rgba(0, 255, 102, 0.5);
+            color: var(--accent-green);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
+            cursor: pointer;
+            transition: transform 0.15s ease, border-color 0.2s ease, background 0.2s ease, bottom 0.25s ease;
+        }
+
+        .btn-my-location.shifted-up {
+            bottom: max(220px, calc(env(safe-area-inset-bottom, 16px) + 206px));
+        }
+
+        .btn-my-location:active {
+            transform: scale(0.92);
+            background: var(--surface-secondary);
+        }
+
+        .btn-my-location.locating {
+            border-color: var(--accent-purple-light);
+            color: #d8b4fe;
+            animation: gps-btn-pulse 1.2s infinite ease-in-out;
+        }
+
+        @keyframes gps-btn-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.08); }
+        }
+
+        /* =====================================================================
+           5. MARCADOR GPS DO USUÁRIO (PONTO AZUL PULSANTE)
+           ===================================================================== */
+        .user-gps-dot {
+            width: 17px;
+            height: 17px;
+            background: #2563eb;
+            border: 3px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 0 rgba(37, 99, 235, 0.85);
+            animation: gps-pulse 2.2s infinite;
+        }
+
+        @keyframes gps-pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.85); }
+            70%  { box-shadow: 0 0 0 20px rgba(37, 99, 235, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+        }
+
+        /* =====================================================================
+           6. RÓTULOS PERMANENTES (ZOOM >= 16 OU TRANSFORMADOR SELECIONADO)
+           ===================================================================== */
+        .trafo-pill-label {
+            background: rgba(10, 22, 26, 0.94) !important;
+            color: #e2f8ee !important;
+            border: 1px solid rgba(0, 255, 102, 0.48) !important;
+            border-radius: 6px !important;
+            padding: 2px 7px !important;
+            font-size: 11px !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.02em;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.82) !important;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+
+        .trafo-pill-label::before {
+            border-top-color: rgba(10, 22, 26, 0.94) !important;
+        }
+
+        .trafo-pill-label.selected {
+            background: rgba(24, 10, 44, 0.97) !important;
+            color: #ffffff !important;
+            border: 1.5px solid var(--accent-purple-light) !important;
+            box-shadow: 0 0 14px rgba(128, 0, 255, 0.78) !important;
+            font-size: 12px !important;
+        }
+
+        .trafo-pill-label.selected::before {
+            border-top-color: rgba(24, 10, 44, 0.97) !important;
+        }
+
+        /* =====================================================================
+           7. CARTÃO INFERIOR DE DETALHES DO EQUIPAMENTO & GOOGLE MAPS
+           ===================================================================== */
+        .detail-sheet {
+            position: fixed;
+            left: 50%;
+            bottom: max(12px, env(safe-area-inset-bottom, 12px));
+            transform: translate(-50%, calc(100% + 28px));
+            width: calc(100vw - 24px);
+            max-width: 480px;
+            z-index: 32;
+            background: rgba(19, 42, 48, 0.97);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1.5px solid rgba(0, 255, 102, 0.42);
+            border-radius: 18px;
+            padding: 15px 16px;
+            box-shadow: 0 18px 42px rgba(0, 0, 0, 0.9);
+            transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .detail-sheet.open {
+            transform: translate(-50%, 0);
+        }
+
+        .detail-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .detail-title-group {
+            min-width: 0;
+        }
+
+        .detail-tag {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #d8b4fe;
+            background: rgba(128, 0, 255, 0.28);
+            border: 1px solid rgba(168, 85, 247, 0.55);
+            padding: 2px 8px;
+            border-radius: 999px;
+            margin-bottom: 4px;
+        }
+
+        .detail-equipamento {
+            font-size: 18px;
+            font-weight: 800;
+            color: var(--accent-green);
+            margin: 0;
+            letter-spacing: 0.01em;
+            word-break: break-word;
+        }
+
+        .detail-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            background: rgba(15, 34, 40, 0.9);
+            color: var(--text-muted);
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .detail-meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-size: 12.5px;
+            color: #cbd5e1;
+        }
+
+        .detail-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(15, 34, 40, 0.92);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 8px;
+            padding: 4px 9px;
+            font-size: 12px;
+        }
+
+        .detail-pill strong {
+            color: var(--text-main);
+        }
+
+        .detail-pill.distance {
+            border-color: rgba(168, 85, 247, 0.55);
+            color: #f3e8ff;
+        }
+
+        .detail-coords {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .btn-gmaps {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #00ff66 0%, #00c44f 100%);
+            color: #04160b !important;
+            font-size: 13.5px;
+            font-weight: 800;
+            text-decoration: none !important;
+            box-shadow: 0 6px 20px rgba(0, 255, 102, 0.34);
+            transition: transform 0.14s ease, filter 0.15s ease;
+        }
+
+        .btn-gmaps:active {
+            transform: scale(0.97);
+            filter: brightness(0.92);
+        }
+
+        /* =====================================================================
+           8. TOAST SUTIL INFERIOR (FEEDBACK DE ZOOM / CAMADA / CARREGAMENTO)
+           ===================================================================== */
+        .subtle-badge {
+            position: fixed;
+            bottom: max(24px, env(safe-area-inset-bottom, 24px));
+            left: 14px;
+            right: 76px;
+            max-width: 340px;
+            z-index: 25;
+            background: rgba(15, 34, 40, 0.94);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            color: #e2e8f0;
+            border: 1px solid rgba(0, 255, 102, 0.32);
+            border-radius: 999px;
+            padding: 8px 14px;
+            font-size: 11.5px;
+            font-weight: 600;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.72);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.22s ease, bottom 0.25s ease;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .subtle-badge.visible {
+            opacity: 1;
+        }
+
+        .subtle-badge.shifted-up {
+            bottom: max(222px, calc(env(safe-area-inset-bottom, 16px) + 208px));
+        }
+    </style>
+</head>
+<body>
+
+    <!-- BARRA DE BUSCA FIXA NO TOPO + STATUS DO JSON EXTERNO -->
+    <div class="search-wrapper" id="search-wrapper">
+        <div class="search-bar">
+            <div class="search-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+            </div>
+            <input
+                type="search"
+                id="search-input"
+                class="search-input"
+                placeholder="Buscar nº do equipamento ou circuito..."
+                autocomplete="off"
+                autocorrect="off"
+                spellcheck="false"
+            />
+            <button type="button" id="search-clear-btn" class="search-clear-btn" aria-label="Limpar busca">✕</button>
+        </div>
+
+        <!-- BANNER DE CARREGAMENTO / FALLBACK SELETOR DE ARQUIVO LOCAL -->
+        <div id="json-status-banner" class="json-status-banner" role="status">
+            <div class="spinner-dot" id="json-spinner"></div>
+            <div class="json-status-text" id="json-status-text">
+                <strong>Carregando equipamentos.json...</strong>
+                <span>Preparando índice espacial e busca rápida</span>
+            </div>
+            <button type="button" id="btn-pick-json" class="btn-pick-json" style="display:none;">Selecionar JSON</button>
+            <input type="file" id="json-file-input" accept=".json,application/json" style="display:none;" />
+        </div>
+
+        <!-- LISTA SUSPENSA DE RESULTADOS -->
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+
+    <!-- CONTAINER DO MAPA EM TELA CHEIA -->
+    <div id="map"></div>
+
+    <!-- BOTÃO FLUTUANTE DE MINHA LOCALIZAÇÃO (GPS) -->
+    <button type="button" id="btn-my-location" class="btn-my-location" title="Ir para minha localização atual" aria-label="Minha localização">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+        </svg>
+    </button>
+
+    <!-- TOAST SUTIL DE STATUS -->
+    <div id="subtle-badge" class="subtle-badge"></div>
+
+    <!-- CARTÃO INFERIOR DE DETALHES DO EQUIPAMENTO SELECIONADO -->
+    <section id="detail-sheet" class="detail-sheet" aria-live="polite">
+        <div class="detail-header">
+            <div class="detail-title-group">
+                <span class="detail-tag">Transformador</span>
+                <h2 id="detail-equipamento" class="detail-equipamento">TRF-000000</h2>
+            </div>
+            <button type="button" id="detail-close" class="detail-close" aria-label="Fechar detalhes">✕</button>
+        </div>
+
+        <div class="detail-meta-row">
+            <div class="detail-pill">
+                <span>Circuito:</span>
+                <strong id="detail-circuito">—</strong>
+            </div>
+            <div class="detail-pill distance" id="detail-distance-pill" style="display:none;">
+                <span>📍</span>
+                <strong id="detail-distance">—</strong>
+            </div>
+            <span class="detail-coords" id="detail-coords">0.000000, 0.000000</span>
+        </div>
+
+        <a id="detail-gmaps-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-gmaps">
+            <span>🧭</span>
+            <span>Ir para o equipamento (Google Maps)</span>
+        </a>
+    </section>
+
+    <!-- LEAFLET JS COM FALLBACK DUPLO AUTOMÁTICO -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        if (typeof L === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"><\/script>');
+        }
+    </script>
+    <script>
+        if (typeof L === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"><\/script>');
+        }
+    </script>
+
+    <script>
+        /**
+         * =====================================================================
+         * CONFIGURAÇÕES DE PERFORMANCE PARA 28.859+ EQUIPAMENTOS
+         * =====================================================================
+         */
+        const JSON_URL = './equipamentos.json';
+        const CELL_SIZE = 0.02;           // Células espaciais (~2.2 km x 2.2 km)
+        const MAX_VISIBLE_MARKERS = 450;  // Limite máximo simultâneo no DOM
+        const LABEL_MIN_ZOOM = 16;        // Exibe nomes permanentes a partir do zoom 16
+        const MAX_SEARCH_RESULTS = 25;    // Máximo de itens na lista suspensa
+
+        let map = null;
+        let visibleMarkersLayer = null;
+        let selectedMarkerLayer = null;
+        let spatialGrid = new Map();
+        let validEquipamentos = [];
+
+        let trafoDefaultIcon = null;
+        let trafoSelectedIcon = null;
+        let selectedEquipamento = null;
+
+        // Camadas base (Toque duplo alterna entre Ruas e Satélite)
+        let streetLayer = null;
+        let satelliteLayer = null;
+        let isSatellite = false;
+
+        // Estado GPS do aparelho
+        let userLat = null;
+        let userLng = null;
+        let userMarker = null;
+        let userAccuracyCircle = null;
+        let hasInitialGPSCentered = false;
+
+        /**
+         * =====================================================================
+         * 1. CARREGAMENTO ASSÍNCRONO DE ./equipamentos.json + FALLBACK LOCAL
+         * =====================================================================
+         */
+        async function loadExternalEquipamentos() {
+            const banner = document.getElementById('json-status-banner');
+            const spinner = document.getElementById('json-spinner');
+            const statusText = document.getElementById('json-status-text');
+            const pickBtn = document.getElementById('btn-pick-json');
+
+            banner.classList.add('visible');
+            spinner.style.display = 'block';
+            pickBtn.style.display = 'none';
+            statusText.innerHTML = `
+                <strong>Carregando equipamentos.json...</strong>
+                <span>Indexando pontos da rede elétrica</span>
+            `;
+
+            try {
+                const response = await fetch(JSON_URL, { cache: 'no-cache' });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                processEquipamentosArray(data);
+            } catch (err) {
+                console.warn('Falha ao carregar ./equipamentos.json via fetch:', err);
+                spinner.style.display = 'none';
+                pickBtn.style.display = 'inline-block';
+
+                const isFileProtocol = window.location.protocol === 'file:';
+                statusText.innerHTML = isFileProtocol
+                    ? `<strong>Modo local (file://) bloqueado pelo navegador</strong>
+                       <span>Hospede via HTTP/GitHub Pages ou selecione o arquivo manualmente:</span>`
+                    : `<strong>Arquivo equipamentos.json não encontrado</strong>
+                       <span>Coloque-o na mesma pasta ou selecione o arquivo manualmente:</span>`;
+            }
+        }
+
+        function processEquipamentosArray(rawData) {
+            const banner = document.getElementById('json-status-banner');
+
+            if (!Array.isArray(rawData)) {
+                showBadge('Formato inválido: o JSON deve ser uma lista [ {...} ]', 4500);
+                return;
+            }
+
+            buildIndexes(rawData);
+            banner.classList.remove('visible');
+
+            // Se o GPS ainda não centralizou e existem pontos, enquadra o primeiro ponto como referência
+            if (!hasInitialGPSCentered && userLat === null && validEquipamentos.length > 0 && map) {
+                map.setView([validEquipamentos[0]._lat, validEquipamentos[0]._lng], 15);
+            }
+
+            renderVisibleEquipamentos();
+
+            if (validEquipamentos.length > 0) {
+                showBadge(`${validEquipamentos.length.toLocaleString('pt-BR')} equipamentos carregados`, 2800);
+            } else {
+                showBadge('Nenhum equipamento válido encontrado no JSON', 3500);
+            }
+        }
+
+        function initManualJsonPicker() {
+            const pickBtn = document.getElementById('btn-pick-json');
+            const fileInput = document.getElementById('json-file-input');
+
+            pickBtn.addEventListener('click', () => fileInput.click());
+
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const parsed = JSON.parse(ev.target.result);
+                        processEquipamentosArray(parsed);
+                    } catch (parseErr) {
+                        showBadge('Erro ao ler JSON: verifique a sintaxe do arquivo', 4500);
+                    }
+                };
+                reader.readAsText(file, 'UTF-8');
+                fileInput.value = '';
+            });
+        }
+
+        /**
+         * =====================================================================
+         * 2. INDEXAÇÃO ESPACIAL (0.02° x 0.02°) & ÍNDICE DE BUSCA EM MEMÓRIA
+         * =====================================================================
+         */
+        function buildIndexes(items) {
+            spatialGrid.clear();
+            validEquipamentos = [];
+
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (!item || typeof item !== 'object') continue;
+
+                const lat = Number(item.latitude);
+                const lng = Number(item.longitude);
+                if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+                const eqStr = String(item.equipamento ?? '').trim();
+                const circStr = String(item.circuito ?? '').trim();
+
+                item._lat = lat;
+                item._lng = lng;
+                item._eqStr = eqStr;
+                item._circStr = circStr;
+                item._eqLower = eqStr.toLowerCase();
+                item._circLower = circStr.toLowerCase();
+
+                validEquipamentos.push(item);
+
+                const cellX = Math.floor(lng / CELL_SIZE);
+                const cellY = Math.floor(lat / CELL_SIZE);
+                const key = `${cellX}:${cellY}`;
+
+                let bucket = spatialGrid.get(key);
+                if (!bucket) {
+                    bucket = [];
+                    spatialGrid.set(key, bucket);
+                }
+                bucket.push(item);
+            }
+        }
+
+        /**
+         * =====================================================================
+         * 3. ÍCONES SVG TÉCNICOS DE TRANSFORMADOR (NEON GREEN & NEON PURPLE)
+         * =====================================================================
+         */
+        function createTransformerDivIcon(isSelected = false) {
+            const size = isSelected ? 46 : 38;
+            const half = size / 2;
+            const ringColor = isSelected ? '#a855f7' : '#00ff66';
+            const fillBg = isSelected ? '#1a0b2e' : '#0f2228';
+            const tankFill = isSelected ? '#261142' : '#132a30';
+            const halo = isSelected
+                ? `<circle cx="21" cy="21" r="20" fill="none" stroke="#a855f7" stroke-width="1.6" stroke-opacity="0.7"/>`
+                : '';
+
+            const svg = `
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 42 42" width="${size}" height="${size}" style="filter: drop-shadow(0 3px 7px rgba(0,0,0,0.88));">
+                    ${halo}
+                    <circle cx="21" cy="21" r="18.5" fill="${fillBg}" stroke="${ringColor}" stroke-width="2.3"/>
+
+                    <!-- Suporte de fixação e poste -->
+                    <rect x="29" y="16" width="5" height="3" rx="0.8" fill="#94a3b8"/>
+                    <rect x="29" y="25" width="5" height="3" rx="0.8" fill="#94a3b8"/>
+                    <rect x="33" y="13" width="3" height="19" rx="1" fill="#64748b"/>
+
+                    <!-- Buchas isoladoras de Alta Tensão (AT) -->
+                    <line x1="14" y1="6.5" x2="14" y2="13" stroke="#e2f8ee" stroke-width="2.1" stroke-linecap="round"/>
+                    <rect x="11.8" y="8" width="4.4" height="1.5" rx="0.7" fill="${ringColor}"/>
+                    <rect x="11.8" y="10.4" width="4.4" height="1.5" rx="0.7" fill="${ringColor}"/>
+
+                    <line x1="20" y1="6.5" x2="20" y2="13" stroke="#e2f8ee" stroke-width="2.1" stroke-linecap="round"/>
+                    <rect x="17.8" y="8" width="4.4" height="1.5" rx="0.7" fill="${ringColor}"/>
+                    <rect x="17.8" y="10.4" width="4.4" height="1.5" rx="0.7" fill="${ringColor}"/>
+
+                    <!-- Bucha de Baixa Tensão (BT) -->
+                    <line x1="25.5" y1="9" x2="25.5" y2="13" stroke="#e2f8ee" stroke-width="2" stroke-linecap="round"/>
+                    <rect x="23.8" y="10.2" width="3.4" height="1.4" rx="0.6" fill="#38bdf8"/>
+
+                    <!-- Tampa e tanque cilíndrico -->
+                    <rect x="9.5" y="12.5" width="20" height="2.6" rx="1.1" fill="#cbd5e1"/>
+                    <rect x="11" y="15" width="17" height="16.5" rx="2" fill="${tankFill}" stroke="${ringColor}" stroke-width="1.6"/>
+
+                    <!-- Aletas de refrigeração -->
+                    <line x1="8.2" y1="18" x2="11" y2="18" stroke="${ringColor}" stroke-width="1.8" stroke-linecap="round"/>
+                    <line x1="8.2" y1="21.5" x2="11" y2="21.5" stroke="${ringColor}" stroke-width="1.8" stroke-linecap="round"/>
+                    <line x1="8.2" y1="25" x2="11" y2="25" stroke="${ringColor}" stroke-width="1.8" stroke-linecap="round"/>
+                    <line x1="8.2" y1="28.5" x2="11" y2="28.5" stroke="${ringColor}" stroke-width="1.8" stroke-linecap="round"/>
+
+                    <!-- Raio elétrico -->
+                    <polygon points="20.4,17.2 16.6,23.2 19.7,23.2 18.6,29.2 22.9,22.5 19.7,22.5" fill="#00ff66"/>
+                </svg>
+            `;
+
+            return L.divIcon({
+                html: svg,
+                className: '',
+                iconSize: [size, size],
+                iconAnchor: [half, half]
+            });
+        }
+
+        /**
+         * =====================================================================
+         * 4. RENDERIZAÇÃO POR ÁREA VISÍVEL (VIEWPORT CULLING)
+         * =====================================================================
+         */
+        function renderVisibleEquipamentos() {
+            if (!map || !visibleMarkersLayer) return;
+
+            const bounds = map.getBounds().pad(0.15);
+            const south = bounds.getSouth();
+            const north = bounds.getNorth();
+            const west = bounds.getWest();
+            const east = bounds.getEast();
+
+            const minCellX = Math.floor(west / CELL_SIZE);
+            const maxCellX = Math.floor(east / CELL_SIZE);
+            const minCellY = Math.floor(south / CELL_SIZE);
+            const maxCellY = Math.floor(north / CELL_SIZE);
+
+            const candidates = [];
+
+            for (let cx = minCellX; cx <= maxCellX; cx++) {
+                for (let cy = minCellY; cy <= maxCellY; cy++) {
+                    const bucket = spatialGrid.get(`${cx}:${cy}`);
+                    if (!bucket) continue;
+
+                    for (let i = 0; i < bucket.length; i++) {
+                        const item = bucket[i];
+                        if (item === selectedEquipamento) continue;
+                        if (item._lat >= south && item._lat <= north && item._lng >= west && item._lng <= east) {
+                            candidates.push(item);
+                        }
+                    }
+                }
+            }
+
+            const currentZoom = map.getZoom();
+            const showLabels = currentZoom >= LABEL_MIN_ZOOM;
+            const totalInView = candidates.length;
+
+            let itemsToRender = candidates;
+            if (totalInView > MAX_VISIBLE_MARKERS) {
+                const step = Math.ceil(totalInView / MAX_VISIBLE_MARKERS);
+                itemsToRender = [];
+                for (let i = 0; i < totalInView && itemsToRender.length < MAX_VISIBLE_MARKERS; i += step) {
+                    itemsToRender.push(candidates[i]);
+                }
+                showBadge(`Aproxime o zoom para ver todos os ${totalInView.toLocaleString('pt-BR')} itens na região`);
+            } else {
+                hideBadge();
+            }
+
+            visibleMarkersLayer.clearLayers();
+
+            for (let i = 0; i < itemsToRender.length; i++) {
+                const eq = itemsToRender[i];
+                const marker = L.marker([eq._lat, eq._lng], { icon: trafoDefaultIcon });
+
+                if (showLabels && eq._eqStr) {
+                    marker.bindTooltip(escapeHTML(eq._eqStr), {
+                        permanent: true,
+                        direction: 'top',
+                        offset: [0, -20],
+                        className: 'trafo-pill-label'
+                    });
+                }
+
+                marker.on('click', () => selectAndFocusEquipamento(eq, false));
+                marker.addTo(visibleMarkersLayer);
+            }
+        }
+
+        /**
+         * =====================================================================
+         * 5. SELEÇÃO DE EQUIPAMENTO & CARTÃO INFERIOR COM GOOGLE MAPS
+         * =====================================================================
+         */
+        function selectAndFocusEquipamento(eq, shouldFly = true) {
+            if (!eq || !map) return;
+
+            selectedEquipamento = eq;
+            selectedMarkerLayer.clearLayers();
+
+            const marker = L.marker([eq._lat, eq._lng], {
+                icon: trafoSelectedIcon,
+                zIndexOffset: 900
+            });
+
+            if (eq._eqStr) {
+                marker.bindTooltip(escapeHTML(eq._eqStr), {
+                    permanent: true,
+                    direction: 'top',
+                    offset: [0, -24],
+                    className: 'trafo-pill-label selected'
+                });
+            }
+
+            marker.addTo(selectedMarkerLayer);
+            openDetailSheet(eq);
+
+            if (shouldFly) {
+                const targetZoom = Math.max(map.getZoom(), 17);
+                map.flyTo([eq._lat, eq._lng], targetZoom, {
+                    animate: true,
+                    duration: 0.75
+                });
+            }
+
+            renderVisibleEquipamentos();
+        }
+
+        function openDetailSheet(eq) {
+            const sheet = document.getElementById('detail-sheet');
+            const eqTitle = document.getElementById('detail-equipamento');
+            const circEl = document.getElementById('detail-circuito');
+            const distPill = document.getElementById('detail-distance-pill');
+            const distEl = document.getElementById('detail-distance');
+            const coordsEl = document.getElementById('detail-coords');
+            const gmapsLink = document.getElementById('detail-gmaps-link');
+            const gpsBtn = document.getElementById('btn-my-location');
+            const badge = document.getElementById('subtle-badge');
+
+            eqTitle.textContent = eq._eqStr || 'Equipamento sem código';
+            circEl.textContent = eq._circStr || 'Não informado';
+            coordsEl.textContent = `${eq._lat.toFixed(6)}, ${eq._lng.toFixed(6)}`;
+            gmapsLink.href = `https://www.google.com/maps/dir/?api=1&destination=${eq._lat},${eq._lng}`;
+
+            if (userLat !== null && userLng !== null) {
+                const meters = calculateDistanceMeters(userLat, userLng, eq._lat, eq._lng);
+                distEl.textContent = formatDistance(meters);
+                distPill.style.display = 'inline-flex';
+            } else {
+                distPill.style.display = 'none';
+            }
+
+            sheet.classList.add('open');
+            gpsBtn.classList.add('shifted-up');
+            badge.classList.add('shifted-up');
+        }
+
+        function closeDetailSheet() {
+            const sheet = document.getElementById('detail-sheet');
+            const gpsBtn = document.getElementById('btn-my-location');
+            const badge = document.getElementById('subtle-badge');
+
+            sheet.classList.remove('open');
+            gpsBtn.classList.remove('shifted-up');
+            badge.classList.remove('shifted-up');
+
+            if (selectedEquipamento) {
+                selectedEquipamento = null;
+                selectedMarkerLayer.clearLayers();
+                renderVisibleEquipamentos();
+            }
+        }
+
+        /**
+         * =====================================================================
+         * 6. BUSCA INSTANTÂNEA POR EQUIPAMENTO OU CIRCUITO (28.859+ REGISTROS)
+         * =====================================================================
+         */
+        function initSearchUI() {
+            const input = document.getElementById('search-input');
+            const clearBtn = document.getElementById('search-clear-btn');
+            const resultsBox = document.getElementById('search-results');
+            const wrapper = document.getElementById('search-wrapper');
+
+            let debounceTimer = null;
+
+            const executeSearch = () => {
+                const rawQuery = input.value.trim();
+                clearBtn.classList.toggle('visible', rawQuery.length > 0);
+
+                if (!rawQuery) {
+                    resultsBox.classList.remove('open');
+                    resultsBox.innerHTML = '';
+                    return;
+                }
+
+                const q = rawQuery.toLowerCase();
+                const exactMatches = [];
+                const prefixMatches = [];
+                const partialMatches = [];
+
+                for (let i = 0; i < validEquipamentos.length; i++) {
+                    const item = validEquipamentos[i];
+                    if (item._eqLower === q) {
+                        exactMatches.push(item);
+                    } else if (item._eqLower.startsWith(q)) {
+                        prefixMatches.push(item);
+                    } else if (item._eqLower.includes(q) || item._circLower.includes(q)) {
+                        partialMatches.push(item);
+                    }
+
+                    if (exactMatches.length + prefixMatches.length >= MAX_SEARCH_RESULTS * 3 && q.length >= 3) {
+                        break;
+                    }
+                }
+
+                let combined = exactMatches.concat(prefixMatches, partialMatches);
+
+                // Ordena por proximidade do aparelho quando o GPS estiver ativo
+                if (userLat !== null && userLng !== null && combined.length > 1) {
+                    const topPool = combined.slice(0, 120);
+                    topPool.sort((a, b) => {
+                        const dA = (a._lat - userLat) ** 2 + (a._lng - userLng) ** 2;
+                        const dB = (b._lat - userLat) ** 2 + (b._lng - userLng) ** 2;
+                        return dA - dB;
+                    });
+                    combined = topPool;
+                }
+
+                renderSearchDropdown(combined.slice(0, MAX_SEARCH_RESULTS), rawQuery);
+            };
+
+            input.addEventListener('input', () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(executeSearch, 65);
+            });
+
+            input.addEventListener('focus', () => {
+                if (input.value.trim().length > 0) {
+                    executeSearch();
+                }
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const firstItem = resultsBox.querySelector('.result-item');
+                    if (firstItem) firstItem.click();
+                }
+            });
+
+            clearBtn.addEventListener('click', () => {
+                input.value = '';
+                clearBtn.classList.remove('visible');
+                resultsBox.classList.remove('open');
+                resultsBox.innerHTML = '';
+                input.focus();
+            });
+
+            document.addEventListener('pointerdown', (e) => {
+                if (!wrapper.contains(e.target)) {
+                    resultsBox.classList.remove('open');
+                }
+            });
+        }
+
+        function renderSearchDropdown(results, query) {
+            const resultsBox = document.getElementById('search-results');
+            const input = document.getElementById('search-input');
+
+            if (results.length === 0) {
+                resultsBox.innerHTML = `<div class="search-empty">Nenhum equipamento encontrado para "<strong>${escapeHTML(query)}</strong>"</div>`;
+                resultsBox.classList.add('open');
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+
+            for (let i = 0; i < results.length; i++) {
+                const eq = results[i];
+                const row = document.createElement('div');
+                row.className = 'result-item';
+                row.setAttribute('role', 'option');
+
+                let distBadge = '';
+                if (userLat !== null && userLng !== null) {
+                    const meters = calculateDistanceMeters(userLat, userLng, eq._lat, eq._lng);
+                    distBadge = `<span class="result-dist">${formatDistance(meters)}</span>`;
+                }
+
+                row.innerHTML = `
+                    <div class="result-info">
+                        <span class="result-code">⚡ ${escapeHTML(eq._eqStr || 'Sem código')}</span>
+                        <span class="result-circuit">Circuito: ${escapeHTML(eq._circStr || 'N/I')}</span>
+                    </div>
+                    <div class="result-meta">
+                        ${distBadge}
+                        <span class="result-go">Ir para item →</span>
+                    </div>
+                `;
+
+                row.addEventListener('click', () => {
+                    input.value = eq._eqStr;
+                    input.blur();
+                    resultsBox.classList.remove('open');
+                    selectAndFocusEquipamento(eq, true);
+                });
+
+                fragment.appendChild(row);
+            }
+
+            resultsBox.innerHTML = '';
+            resultsBox.appendChild(fragment);
+            resultsBox.classList.add('open');
+        }
+
+        /**
+         * =====================================================================
+         * 7. GEOLOCALIZAÇÃO IMEDIATA AO ENTRAR + RASTREAMENTO CONTÍNUO
+         * =====================================================================
+         */
+        function updateUserPositionOnMap(latitude, longitude, accuracy, shouldCenter = false, zoomLevel = 16) {
+            userLat = latitude;
+            userLng = longitude;
+            const latlng = [latitude, longitude];
+
+            if (!userMarker) {
+                const gpsIcon = L.divIcon({
+                    className: '',
+                    html: '<div class="user-gps-dot"></div>',
+                    iconSize: [17, 17],
+                    iconAnchor: [8.5, 8.5]
+                });
+                userMarker = L.marker(latlng, { icon: gpsIcon, zIndexOffset: 1000 }).addTo(map);
+                userAccuracyCircle = L.circle(latlng, {
+                    radius: accuracy || 25,
+                    color: '#2563eb',
+                    fillColor: '#2563eb',
+                    fillOpacity: 0.14,
+                    weight: 1.2
+                }).addTo(map);
+            } else {
+                userMarker.setLatLng(latlng);
+                userAccuracyCircle.setLatLng(latlng);
+                if (accuracy) userAccuracyCircle.setRadius(accuracy);
+            }
+
+            // Atualiza distância no cartão caso esteja aberto
+            if (selectedEquipamento) {
+                const meters = calculateDistanceMeters(userLat, userLng, selectedEquipamento._lat, selectedEquipamento._lng);
+                document.getElementById('detail-distance').textContent = formatDistance(meters);
+                document.getElementById('detail-distance-pill').style.display = 'inline-flex';
+            }
+
+            if (shouldCenter) {
+                hasInitialGPSCentered = true;
+                map.setView(latlng, zoomLevel, { animate: true });
+            }
+        }
+
+        function initGeolocation() {
+            const btnLocation = document.getElementById('btn-my-location');
+
+            btnLocation.addEventListener('click', () => {
+                if (userLat !== null && userLng !== null) {
+                    map.flyTo([userLat, userLng], 17, { animate: true, duration: 0.65 });
+                    showBadge('Centralizado na sua localização atual', 2000);
+                } else {
+                    requestImmediatePosition(true);
+                }
+            });
+
+            if (!('geolocation' in navigator)) {
+                showBadge('GPS não suportado neste navegador', 3500);
+                return;
+            }
+
+            requestImmediatePosition(true);
+
+            navigator.geolocation.watchPosition(
+                (pos) => {
+                    const { latitude, longitude, accuracy } = pos.coords;
+                    const needsFirstCenter = !hasInitialGPSCentered;
+                    updateUserPositionOnMap(latitude, longitude, accuracy, needsFirstCenter, 16);
+                },
+                () => {},
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 4000,
+                    timeout: 15000
+                }
+            );
+        }
+
+        function requestImmediatePosition(centerOnSuccess) {
+            const btnLocation = document.getElementById('btn-my-location');
+            if (!('geolocation' in navigator)) return;
+
+            btnLocation.classList.add('locating');
+
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    btnLocation.classList.remove('locating');
+                    const { latitude, longitude, accuracy } = pos.coords;
+                    updateUserPositionOnMap(latitude, longitude, accuracy, centerOnSuccess, 16);
+                },
+                (err) => {
+                    btnLocation.classList.remove('locating');
+                    if (err && err.code === 1) {
+                        showBadge('Permissão de GPS negada — exibindo mapa padrão', 3600);
+                    } else {
+                        showBadge('Não foi possível obter o GPS agora', 3000);
+                    }
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        }
+
+        /**
+         * =====================================================================
+         * 8. INICIALIZAÇÃO DO MAPA & EVENTOS
+         * =====================================================================
+         */
+        function initApp() {
+            if (typeof L === 'undefined') {
+                showBadge('Erro ao carregar biblioteca de mapa. Verifique a conexão.', 5000);
+                return;
+            }
+
+            trafoDefaultIcon = createTransformerDivIcon(false);
+            trafoSelectedIcon = createTransformerDivIcon(true);
+
+            const mapEl = document.getElementById('map');
+
+            map = L.map(mapEl, {
+                zoomControl: false,
+                attributionControl: false,
+                doubleClickZoom: false
+            }).setView([-23.5505, -46.6333], 15);
+
+            streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19
+            }).addTo(map);
+
+            satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19
+            });
+
+            visibleMarkersLayer = L.layerGroup().addTo(map);
+            selectedMarkerLayer = L.layerGroup().addTo(map);
+
+            // Toque duplo alterna entre Ruas e Satélite
+            map.on('dblclick', () => {
+                if (isSatellite) {
+                    map.removeLayer(satelliteLayer);
+                    streetLayer.addTo(map);
+                    isSatellite = false;
+                    showBadge('Mapa: Ruas', 1800);
+                } else {
+                    map.removeLayer(streetLayer);
+                    satelliteLayer.addTo(map);
+                    isSatellite = true;
+                    showBadge('Mapa: Satélite', 1800);
+                }
+            });
+
+            // Re-renderiza apenas os marcadores visíveis ao mover ou dar zoom
+            let renderTimer = null;
+            const scheduleRender = () => {
+                clearTimeout(renderTimer);
+                renderTimer = setTimeout(renderVisibleEquipamentos, 40);
+            };
+
+            map.on('moveend', scheduleRender);
+            map.on('zoomend', scheduleRender);
+
+            document.getElementById('detail-close').addEventListener('click', closeDetailSheet);
+
+            setTimeout(() => { if (map) map.invalidateSize(); }, 50);
+            setTimeout(() => { if (map) map.invalidateSize(); }, 300);
+
+            if (typeof ResizeObserver !== 'undefined') {
+                new ResizeObserver(() => {
+                    if (map) map.invalidateSize();
+                }).observe(mapEl);
+            }
+
+            window.addEventListener('resize', () => {
+                if (map) map.invalidateSize();
+            });
+
+            initSearchUI();
+            initManualJsonPicker();
+            initGeolocation();
+            loadExternalEquipamentos();
+        }
+
+        /**
+         * =====================================================================
+         * 9. UTILITÁRIOS (DISTÂNCIA HAVERSINE, TOAST E ESCAPE HTML)
+         * =====================================================================
+         */
+        function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const toRad = (deg) => deg * (Math.PI / 180);
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+
+        function formatDistance(meters) {
+            if (meters < 1000) {
+                return `${Math.round(meters)} m`;
+            }
+            return `${(meters / 1000).toFixed(1).replace('.', ',')} km`;
+        }
+
+        let badgeTimer = null;
+        function showBadge(text, autoHideMs = 0) {
+            const el = document.getElementById('subtle-badge');
+            el.textContent = text;
+            el.classList.add('visible');
+            clearTimeout(badgeTimer);
+            if (autoHideMs > 0) {
+                badgeTimer = setTimeout(() => {
+                    el.classList.remove('visible');
+                }, autoHideMs);
+            }
+        }
+
+        function hideBadge() {
+            const el = document.getElementById('subtle-badge');
+            el.classList.remove('visible');
+        }
+
+        function escapeHTML(str) {
+            return String(str).replace(/[&<>"']/g, (m) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[m]));
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            initApp();
+        }
+    </script>
+</body>
+</html>
+``````html
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mapa de Transformadores — Rede Elétrica</title>
+
+    <!-- Leaflet CSS com Fallback Duplo Automático -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';" />
+
+    <style>
+        /* =====================================================================
+           1. PALETA ESCURA DE ALTO CONTRASTE & LAYOUT TELA CHEIA (100DVH)
+           ===================================================================== */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        :root {
+            --bg-canvas: #081216;
+            --surface-primary: #0f2228;
+            --surface-secondary: #132a30;
+            --border-neon: rgba(0, 255, 102, 0.32);
+            --accent-green: #00ff66;
+            --accent-purple: #8000ff;
+            --accent-purple-light: #a855f7;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100dvh;
+            overflow: hidden;
+            background: var(--bg-canvas);
+            color: var(--text-main);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            user-select: none;
+        }
+
+        #map {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100dvh;
+            z-index: 1;
+            background: var(--bg-canvas);
+        }
+
+        .leaflet-control-zoom,
+        .leaflet-control-attribution {
+            display: none !important;
+        }
+
+        /* =====================================================================
+           2. BARRA DE BUSCA FLUTUANTE NO TOPO + RESULTADOS INSTANTÂNEOS
+           ===================================================================== */
+        .search-wrapper {
+            position: fixed;
+            top: max(12px, env(safe-area-inset-top, 12px));
+            left: 50%;
+            transform: translateX(-50%);
+            width: calc(100vw - 24px);
+            max-width: 480px;
+            z-index: 30;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .search-bar {
+            display: flex;
+            align-items: center;
+            background: rgba(15, 34, 40, 0.94);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1.5px solid var(--border-neon);
+            border-radius: 14px;
+            padding: 4px 12px;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.78);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .search-bar:focus-within {
+            border-color: var(--accent-green);
+            box-shadow: 0 10px 30px rgba(0, 255, 102, 0.2);
+        }
+
+        .search-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent-green);
+            margin-right: 9px;
+            flex-shrink: 0;
+        }
+
+        .search-input {
+            flex: 1;
+            width: 100%;
+            height: 40px;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text-main);
+            font-size: 14.5px;
+            font-weight: 500;
+            user-select: text;
+        }
+
+        .search-input::placeholder {
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .search-clear-btn {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(148, 163, 184, 0.16);
+            color: var(--text-main);
+            font-size: 14px;
+            cursor: pointer;
+            margin-left: 6px;
+            flex-shrink: 0;
+        }
+
+        .search-clear-btn.visible {
+            display: flex;
+        }
+
+        .search-results {
+            display: none;
+            flex-direction: column;
+            max-height: min(52dvh, 350px);
+            overflow-y: auto;
+            background: rgba(15, 34, 40, 0.97);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(0, 255, 102, 0.35);
+            border-radius: 14px;
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.88);
+            overscroll-behavior: contain;
+        }
+
+        .search-results.open {
+            display: flex;
+        }
+
+        .result-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 11px 14px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+            cursor: pointer;
+            transition: background 0.14s ease;
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .result-item:active,
+        .result-item:hover {
+            background: rgba(0, 255, 102, 0.11);
+        }
+
+        .result-info {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .result-code {
+            font-size: 14px;
+            font-weight: 800;
+            color: var(--accent-green);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .result-circuit {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .result-meta {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            flex-shrink: 0;
+            gap: 3px;
+        }
+
+        .result-dist {
+            font-size: 11px;
+            font-weight: 700;
+            color: #f3e8ff;
+            background: rgba(128, 0, 255, 0.3);
+            border: 1px solid rgba(168, 85, 247, 0.6);
+            padding: 2px 7px;
+            border-radius: 999px;
+        }
+
+        .result-go {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent-green);
+        }
+
+        .search-empty {
+            padding: 16px;
+            text-align: center;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        /* =====================================================================
+           3. BANNER DE CARREGAMENTO & FALLBACK LOCAL DE JSON (FILE:// CORS)
+           ===================================================================== */
+        .json-status-banner {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            background: rgba(19, 42, 48, 0.96);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(168, 85, 247, 0.55);
+            border-radius: 12px;
+            padding: 10px 12px;
+            box-shadow: 0 10px 26px rgba(0, 0, 0, 0.82);
+            font-size: 12px;
+            line-height: 1.4;
+            color: #e2e8f0;
+        }
+
+        .json-status-banner.visible {
+            display: flex;
+        }
+
+        .json-status-text {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .json-status-text strong {
+            color: var(--accent-green);
+            display: block;
+            font-size: 12.5px;
+            margin-bottom: 2px;
+        }
+
+        .btn-pick-json {
+            flex-shrink: 0;
+            background: linear-gradient(135deg, var(--accent-purple) 0%, #6b21a8 100%);
+            color: #ffffff;
+            border: 1px solid rgba(216, 180, 254, 0.5);
+            border-radius: 9px;
+            padding: 8px 11px;
+            font-size: 11.5px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(128, 0, 255, 0.35);
+            transition: transform 0.14s ease;
+        }
+
+        .btn-pick-json:active {
+            transform: scale(0.95);
+        }
+
+        .spinner-dot {
+            width: 14px;
+            height: 14px;
+            border: 2.5px solid rgba(0, 255, 102, 0.25);
+            border-top-color: var(--accent-green);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* =====================================================================
+           4. BOTÃO FLUTUANTE DE "MINHA LOCALIZAÇÃO" (GPS)
+           ===================================================================== */
+        .btn-my-location {
+            position: fixed;
+            right: 14px;
+            bottom: max(22px, env(safe-area-inset-bottom, 22px));
+            z-index: 28;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(15, 34, 40, 0.95);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1.5px solid rgba(0, 255, 102, 0.5);
+            color: var(--accent-green);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
+            cursor: pointer;
+            transition: transform 0.15s ease, border-color 0.2s ease, background 0.2s ease, bottom 0.25s ease;
+        }
+
+        .btn-my-location.shifted-up {
+            bottom: max(220px, calc(env(safe-area-inset-bottom, 16px) + 206px));
+        }
+
+        .btn-my-location:active {
+            transform: scale(0.92);
+            background: var(--surface-secondary);
+        }
+
+        .btn-my-location.locating {
+            border-color: var(--accent-purple-light);
+            color: #d8b4fe;
+            animation: gps-btn-pulse 1.2s infinite ease-in-out;
+        }
+
+        @keyframes gps-btn-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.08); }
+        }
+
+        /* =====================================================================
+           5. MARCADOR GPS DO USUÁRIO (PONTO AZUL PULSANTE)
+           ===================================================================== */
+        .user-gps-dot {
+            width: 17px;
+            height: 17px;
+            background: #2563eb;
+            border: 3px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 0 rgba(37, 99, 235, 0.85);
+            animation: gps-pulse 2.2s infinite;
+        }
+
+        @keyframes gps-pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.85); }
+            70%  { box-shadow: 0 0 0 20px rgba(37, 99, 235, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+        }
+
+        /* =====================================================================
+           6. RÓTULOS PERMANENTES (ZOOM >= 16 OU TRANSFORMADOR SELECIONADO)
+           ===================================================================== */
+        .trafo-pill-label {
+            background: rgba(10, 22, 26, 0.94) !important;
+            color: #e2f8ee !important;
+            border: 1px solid rgba(0, 255, 102, 0.48) !important;
+            border-radius: 6px !important;
+            padding: 2px 7px !important;
+            font-size: 11px !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.02em;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.82) !important;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+
+        .trafo-pill-label::before {
+            border-top-color: rgba(10, 22, 26, 0.94) !important;
+        }
+
+        .trafo-pill-label.selected {
+            background: rgba(24, 10, 44, 0.97) !important;
+            color: #ffffff !important;
+            border: 1.5px solid var(--accent-purple-light) !important;
+            box-shadow: 0 0 14px rgba(128, 0, 255, 0.78) !important;
+            font-size: 12px !important;
+        }
+
+        .trafo-pill-label.selected::before {
+            border-top-color: rgba(24, 10, 44, 0.97) !important;
+        }
+
+        /* =====================================================================
+           7. CARTÃO INFERIOR DE DETALHES DO EQUIPAMENTO & GOOGLE MAPS
+           ===================================================================== */
+        .detail-sheet {
+            position: fixed;
+            left: 50%;
+            bottom: max(12px, env(safe-area-inset-bottom, 12px));
+            transform: translate(-50%, calc(100% + 28px));
+            width: calc(100vw - 24px);
+            max-width: 480px;
+            z-index: 32;
+            background: rgba(19, 42, 48, 0.97);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1.5px solid rgba(0, 255, 102, 0.42);
+            border-radius: 18px;
+            padding: 15px 16px;
+            box-shadow: 0 18px 42px rgba(0, 0, 0, 0.9);
+            transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .detail-sheet.open {
+            transform: translate(-50%, 0);
+        }
+
+        .detail-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .detail-title-group {
+            min-width: 0;
+        }
+
+        .detail-tag {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #d8b4fe;
+            background: rgba(128, 0, 255, 0.28);
+            border: 1px solid rgba(168, 85, 247, 0.55);
+            padding: 2px 8px;
+            border-radius: 999px;
+            margin-bottom: 4px;
+        }
+
+        .detail-equipamento {
+            font-size: 18px;
+            font-weight: 800;
+            color: var(--accent-green);
+            margin: 0;
+            letter-spacing: 0.01em;
+            word-break: break-word;
+        }
+
+        .detail-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            background: rgba(15, 34, 40, 0.9);
+            color: var(--text-muted);
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .detail-meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-size: 12.5px;
+            color: #cbd5e1;
+        }
+
+        .detail-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(15, 34, 40, 0.92);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 8px;
+            padding: 4px 9px;
+            font-size: 12px;
+        }
+
+        .detail-pill strong {
+            color: var(--text-main);
+        }
+
+        .detail-pill.distance {
+            border-color: rgba(168, 85, 247, 0.55);
+            color: #f3e8ff;
+        }
+
+        .detail-coords {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .btn-gmaps {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #00ff66 0%, #00c44f 100%);
+            color: #04160b !important;
+            font-size: 13.5px;
+            font-weight: 800;
+            text-decoration: none !important;
+            box-shadow: 0 6px 20px rgba(0, 255, 102, 0.34);
+            transition: transform 0.14s ease, filter 0.15s ease;
+        }
+
+        .btn-gmaps:active {
+            transform: scale(0.97);
+            filter: brightness(0.92);
+        }
+
+        /* =====================================================================
+           8. TOAST SUTIL INFERIOR (FEEDBACK DE ZOOM / CAMADA / CARREGAMENTO)
+           ===================================================================== */
+        .subtle-badge {
+            position: fixed;
+            bottom: max(24px, env(safe-area-inset-bottom, 24px));
+            left: 14px;
+            right: 76px;
+            max-width: 340px;
+            z-index: 25;
+            background: rgba(15, 34, 40, 0.94);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            color: #e2e8f0;
+            border: 1px solid rgba(0, 255, 102, 0.32);
+            border-radius: 999px;
+            padding: 8px 14px;
+            font-size: 11.5px;
+            font-weight: 600;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.72);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.22s ease, bottom 0.25s ease;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .subtle-badge.visible {
+            opacity: 1;
+        }
+
+        .subtle-badge.shifted-up {
+            bottom: max(222px, calc(env(safe-area-inset-bottom, 16px) + 208px));
+        }
+    </style>
+</head>
+<body>
+
+    <!-- BARRA DE BUSCA FIXA NO TOPO + STATUS DO JSON EXTERNO -->
+    <div class="search-wrapper" id="search-wrapper">
+        <div class="search-bar">
+            <div class="search-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+            </div>
+            <input
+                type="search"
+                id="search-input"
+                class="search-input"
+                placeholder="Buscar nº do equipamento ou circuito..."
+                autocomplete="off"
+                autocorrect="off"
+                spellcheck="false"
+            />
+            <button type="button" id="search-clear-btn" class="search-clear-btn" aria-label="Limpar busca">✕</button>
+        </div>
+
+        <!-- BANNER DE CARREGAMENTO / FALLBACK SELETOR DE ARQUIVO LOCAL -->
+        <div id="json-status-banner" class="json-status-banner" role="status">
+            <div class="spinner-dot" id="json-spinner"></div>
+            <div class="json-status-text" id="json-status-text">
+                <strong>Carregando equipamentos.json...</strong>
+                <span>Preparando índice espacial e busca rápida</span>
+            </div>
+            <button type="button" id="btn-pick-json" class="btn-pick-json" style="display:none;">Selecionar JSON</button>
+            <input type="file" id="json-file-input" accept=".json,application/json" style="display:none;" />
+        </div>
+
+        <!-- LISTA SUSPENSA DE RESULTADOS -->
+        <div id="search-results" class="search-results" role="listbox"></div>
+    </div>
+
+    <!-- CONTAINER DO MAPA EM TELA CHEIA -->
+    <div id="map"></div>
+
+    <!-- BOTÃO FLUTUANTE DE MINHA LOCALIZAÇÃO (GPS) -->
+    <button type="button" id="btn-my-location" class="btn-my-location" title="Ir para minha localização atual" aria-label="Minha localização">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+        </svg>
+    </button>
+
+    <!-- TOAST SUTIL DE STATUS -->
+    <div id="subtle-badge" class="subtle-badge"></div>
+
+    <!-- CARTÃO INFERIOR DE DETALHES DO EQUIPAMENTO SELECIONADO -->
+    <section id="detail-sheet" class="detail-sheet" aria-live="polite">
+        <div class="detail-header">
+            <div class="detail-title-group">
+                <span class="detail-tag">Transformador</span>
+                <h2 id="detail-equipamento" class="detail-equipamento">TRF-000000</h2>
+            </div>
+            <button type="button" id="detail-close" class="detail-close" aria-label="Fechar detalhes">✕</button>
+        </div>
+
+        <div class="detail-meta-row">
+            <div class="detail-pill">
+                <span>Circuito:</span>
+                <strong id="detail-circuito">—</strong>
+            </div>
+            <div class="detail-pill distance" id="detail-distance-pill" style="display:none;">
+                <span>📍</span>
+                <strong id="detail-distance">—</strong>
+            </div>
+            <span class="detail-coords" id="detail-coords">0.000000, 0.000000</span>
+        </div>
+
+        <a id="detail-gmaps-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-gmaps">
+            <span>🧭</span>
+            <span>Ir para o equipamento (Google Maps)</span>
+        </a>
+    </section>
+
+    <!-- LEAFLET JS COM FALLBACK DUPLO AUTOMÁTICO -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        if (typeof L === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"><\/script>');
+        }
+    </script>
+    <script>
+        if (typeof L === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"><\/script>');
+        }
+    </script>
+
+    <script>
+        /**
+         * =====================================================================
+         * CONFIGURAÇÕES DE PERFORMANCE PARA 28.859+ EQUIPAMENTOS
+         * =====================================================================
+         */
+        const JSON_URL = './equipamentos.json';
+        const CELL_SIZE = 0.02;           // Células espaciais (~2.2 km x 2.2 km)
+        const MAX_VISIBLE_MARKERS = 450;  // Limite máximo simultâneo no DOM
+        const LABEL_MIN_ZOOM = 16;        // Exibe nomes permanentes a partir do zoom 16
+        const MAX_SEARCH_RESULTS = 25;    // Máximo de itens na lista suspensa
+
+        let map = null;
+        let visibleMarkersLayer = null;
+        let selectedMarkerLayer = null;
+        let spatialGrid = new Map();
+        let validEquipamentos = [];
+
+        let trafoDefaultIcon = null;
+        let trafoSelectedIcon = null;
+        let selectedEquipamento = null;
+
+        // Camadas base (Toque duplo alterna entre Ruas e Satélite)
+        let streetLayer = null;
+        let satelliteLayer = null;
+        let isSatellite = false;
+
+        // Estado GPS do aparelho
+        let userLat = null;
+        let userLng = null;
+        let userMarker = null;
+        let userAccuracyCircle = null;
+        let hasInitialGPSCentered = false;
+
+        /**
+         * =====================================================================
+         * 1. CARREGAMENTO ASSÍNCRONO DE ./equipamentos.json + FALLBACK LOCAL
+         * =====================================================================
+         */
+        async function loadExternalEquipamentos() {
+            const banner = document.getElementById('json-status-banner');
+            const spinner = document.getElementById('json-spinner');
+            const statusText = document.getElementById('json-status-text');
+            const pickBtn = document.getElementById('btn-pick-json');
+
+            banner.classList.add('visible');
+            spinner.style.display = 'block';
+            pickBtn.style.display = 'none';
+            statusText.innerHTML = `
+                <strong>Carregando equipamentos.json...</strong>
+                <span>Indexando pontos da rede elétrica</span>
+            `;
+
+            try {
+                const response = await fetch(JSON_URL, { cache: 'no-cache' });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                processEquipamentosArray(data);
+            } catch (err) {
+                console.warn('Falha ao carregar ./equipamentos.json via fetch:', err);
+                spinner.style.display = 'none';
+                pickBtn.style.display = 'inline-block';
+
+                const isFileProtocol = window.location.protocol === 'file:';
+                statusText.innerHTML = isFileProtocol
+                    ? `<strong>Modo local (file://) bloqueado pelo navegador</strong>
+                       <span>Hospede via HTTP/GitHub Pages ou selecione o arquivo manualmente:</span>`
+                    : `<strong>Arquivo equipamentos.json não encontrado</strong>
+                       <span>Coloque-o na mesma pasta ou selecione o arquivo manualmente:</span>`;
+            }
+        }
+
+        function processEquipamentosArray(rawData) {
+            const banner = document.getElementById('json-status-banner');
+
+            if (!Array.isArray(rawData)) {
+                showBadge('Formato inválido: o JSON deve ser uma lista [ {...} ]', 4500);
+                return;
+            }
+
+            buildIndexes(rawData);
+            banner.classList.remove('visible');
+
+            // Se o GPS ainda não centralizou e existem pontos, enquadra o primeiro ponto como referência
+            if (!hasInitialGPSCentered && userLat === null && validEquipamentos.length > 0 && map) {
+                map.setView([validEquipamentos[0]._lat, validEquipamentos[0]._lng], 15);
+            }
+
+            renderVisibleEquipamentos();
+
+            if (validEquipamentos.length > 0) {
+                showBadge(`${validEquipamentos.length.toLocaleString('pt-BR')} equipamentos carregados`, 2800);
+            } else {
+                showBadge('Nenhum equipamento válido encontrado no JSON', 3500);
+            }
+        }
+
+        function initManualJsonPicker() {
+            const pickBtn = document.getElementById('btn-pick-json');
+            const fileInput = document.getElementById('json-file-input');
+
+            pickBtn.addEventListener('click', () => fileInput.click());
+
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const parsed = JSON.parse(ev.target.result);
+                        processEquipamentosArray(parsed);
+                    } catch (parseErr) {
+                        showBadge('Erro ao ler JSON: verifique a sintaxe do arquivo', 4500);
+                    }
+                };
+                reader.readAsText(file, 'UTF-8');
+                fileInput.value = '';
+            });
+        }
+
+        /**
+         * =====================================================================
+         * 2. INDEXAÇÃO ESPACIAL (0.02° x 0.02°) & ÍNDICE DE BUSCA EM MEMÓRIA
+         * =====================================================================
+         */
+        function buildIndexes(items) {
+            spatialGrid.clear();
+            validEquipamentos = [];
+
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (!item || typeof item !== 'object') continue;
+
+                const lat = Number(item.latitude);
+                const lng = Number(item.longitude);
+                if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+                const eqStr = String(item.equipamento ?? '').trim();
+                const circStr = String(item.circuito ?? '').trim();
+
+                item._lat = lat;
+                item._lng = lng;
+                item._eqStr = eqStr;
+                item._circStr = circStr;
+                item._eqLower = eqStr.toLowerCase();
+                item._circLower = circStr.toLowerCase();
+
+                validEquipamentos.push(item);
+
+                const cellX = Math.floor(lng / CELL_SIZE);
+                const cellY = Math.floor(lat / CELL_SIZE);
+                const key = `${cellX}:${cellY}`;
+
+                let bucket = spatialGrid.get(key);
+                if (!bucket) {
+                    bucket = [];
+                    spatialGrid.set(key, bucket);
+                }
+                bucket.push(item);
+            }
+        }
+
+        /**
+         * =====================================================================
+         * 3. ÍCONES SVG TÉCNICOS DE TRANSFORMADOR (NEON GREEN & NEON PURPLE)
+         * =====================================================================
+         */
+        function createTransformerDivIcon(isSelected = false) {
+            const size = isSelected ? 46 : 38;
+            const half = size / 2;
+            const ringColor = isSelected ? '#a855f7' : '#00ff66';
+            const fillBg = isSelected ? '#1a0b2e' : '#0f2228';
+            const tankFill = isSelected ? '#261142' : '#132a30';
+            const halo = isSelected
+                ? `<circle cx="21" cy="21" r="20" fill="none" stroke="#a855f7" stroke-width="1.6" stroke-opacity="0.7"/>`
+                : '';
+
+            const svg = `
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 42 42" width="${size}" height="${size}" style="filter: drop-shadow(0 3px 7px rgba(0,0,0,0.88));">
+                    ${halo}
+                    <circle cx="21" cy="21" r="18.5" fill="${fillBg}" stroke="${ringColor}" stroke-width="2.3"/>
+
+                    <!-- Suporte de fixação e poste -->
+                    <rect x="29" y="16" width="5" height="3" rx="0.8" fill="#94a3b8"/>
+                    <rect x="29" y="25" width="5" height="3" rx="0.8" fill="#94a3b8"/>
+                    <rect x="33" y="13" width="3" height="19" rx="1" fill="#64748b"/>
+
+                    <!-- Buchas isoladoras de Alta Tensão (AT) -->
+                    <line x1="14" y1="6.5" x2="14" y2="13" stroke="#e2f8ee" stroke-width="2.1" stroke-linecap="round"/>
+                    <rect x="11.8" y="8" width="4.4" height="1.5" rx="0.7" fill="${ringColor}"/>
+                    <rect x="11.8" y="10.4" width="4.4" height="1.5" rx="0.7" fill="${ringColor}"/>
+
+                    <line x1="20" y1="6.5" x2="20" y2="13" stroke="#e2f8ee" stroke-width="2.1" stroke-linecap="round"/>
+                    <rect x="17.8" y="8" width="4.4" height="1.5" rx="0.7" fill="${ringColor}"/>
+                    <rect x="17.8" y="10.4" width="4.4" height="1.5" rx="0.7" fill="${ringColor}"/>
+
+                    <!-- Bucha de Baixa Tensão (BT) -->
+                    <line x1="25.5" y1="9" x2="25.5" y2="13" stroke="#e2f8ee" stroke-width="2" stroke-linecap="round"/>
+                    <rect x="23.8" y="10.2" width="3.4" height="1.4" rx="0.6" fill="#38bdf8"/>
+
+                    <!-- Tampa e tanque cilíndrico -->
+                    <rect x="9.5" y="12.5" width="20" height="2.6" rx="1.1" fill="#cbd5e1"/>
+                    <rect x="11" y="15" width="17" height="16.5" rx="2" fill="${tankFill}" stroke="${ringColor}" stroke-width="1.6"/>
+
+                    <!-- Aletas de refrigeração -->
+                    <line x1="8.2" y1="18" x2="11" y2="18" stroke="${ringColor}" stroke-width="1.8" stroke-linecap="round"/>
+                    <line x1="8.2" y1="21.5" x2="11" y2="21.5" stroke="${ringColor}" stroke-width="1.8" stroke-linecap="round"/>
+                    <line x1="8.2" y1="25" x2="11" y2="25" stroke="${ringColor}" stroke-width="1.8" stroke-linecap="round"/>
+                    <line x1="8.2" y1="28.5" x2="11" y2="28.5" stroke="${ringColor}" stroke-width="1.8" stroke-linecap="round"/>
+
+                    <!-- Raio elétrico -->
+                    <polygon points="20.4,17.2 16.6,23.2 19.7,23.2 18.6,29.2 22.9,22.5 19.7,22.5" fill="#00ff66"/>
+                </svg>
+            `;
+
+            return L.divIcon({
+                html: svg,
+                className: '',
+                iconSize: [size, size],
+                iconAnchor: [half, half]
+            });
+        }
+
+        /**
+         * =====================================================================
+         * 4. RENDERIZAÇÃO POR ÁREA VISÍVEL (VIEWPORT CULLING)
+         * =====================================================================
+         */
+        function renderVisibleEquipamentos() {
+            if (!map || !visibleMarkersLayer) return;
+
+            const bounds = map.getBounds().pad(0.15);
+            const south = bounds.getSouth();
+            const north = bounds.getNorth();
+            const west = bounds.getWest();
+            const east = bounds.getEast();
+
+            const minCellX = Math.floor(west / CELL_SIZE);
+            const maxCellX = Math.floor(east / CELL_SIZE);
+            const minCellY = Math.floor(south / CELL_SIZE);
+            const maxCellY = Math.floor(north / CELL_SIZE);
+
+            const candidates = [];
+
+            for (let cx = minCellX; cx <= maxCellX; cx++) {
+                for (let cy = minCellY; cy <= maxCellY; cy++) {
+                    const bucket = spatialGrid.get(`${cx}:${cy}`);
+                    if (!bucket) continue;
+
+                    for (let i = 0; i < bucket.length; i++) {
+                        const item = bucket[i];
+                        if (item === selectedEquipamento) continue;
+                        if (item._lat >= south && item._lat <= north && item._lng >= west && item._lng <= east) {
+                            candidates.push(item);
+                        }
+                    }
+                }
+            }
+
+            const currentZoom = map.getZoom();
+            const showLabels = currentZoom >= LABEL_MIN_ZOOM;
+            const totalInView = candidates.length;
+
+            let itemsToRender = candidates;
+            if (totalInView > MAX_VISIBLE_MARKERS) {
+                const step = Math.ceil(totalInView / MAX_VISIBLE_MARKERS);
+                itemsToRender = [];
+                for (let i = 0; i < totalInView && itemsToRender.length < MAX_VISIBLE_MARKERS; i += step) {
+                    itemsToRender.push(candidates[i]);
+                }
+                showBadge(`Aproxime o zoom para ver todos os ${totalInView.toLocaleString('pt-BR')} itens na região`);
+            } else {
+                hideBadge();
+            }
+
+            visibleMarkersLayer.clearLayers();
+
+            for (let i = 0; i < itemsToRender.length; i++) {
+                const eq = itemsToRender[i];
+                const marker = L.marker([eq._lat, eq._lng], { icon: trafoDefaultIcon });
+
+                if (showLabels && eq._eqStr) {
+                    marker.bindTooltip(escapeHTML(eq._eqStr), {
+                        permanent: true,
+                        direction: 'top',
+                        offset: [0, -20],
+                        className: 'trafo-pill-label'
+                    });
+                }
+
+                marker.on('click', () => selectAndFocusEquipamento(eq, false));
+                marker.addTo(visibleMarkersLayer);
+            }
+        }
+
+        /**
+         * =====================================================================
+         * 5. SELEÇÃO DE EQUIPAMENTO & CARTÃO INFERIOR COM GOOGLE MAPS
+         * =====================================================================
+         */
+        function selectAndFocusEquipamento(eq, shouldFly = true) {
+            if (!eq || !map) return;
+
+            selectedEquipamento = eq;
+            selectedMarkerLayer.clearLayers();
+
+            const marker = L.marker([eq._lat, eq._lng], {
+                icon: trafoSelectedIcon,
+                zIndexOffset: 900
+            });
+
+            if (eq._eqStr) {
+                marker.bindTooltip(escapeHTML(eq._eqStr), {
+                    permanent: true,
+                    direction: 'top',
+                    offset: [0, -24],
+                    className: 'trafo-pill-label selected'
+                });
+            }
+
+            marker.addTo(selectedMarkerLayer);
+            openDetailSheet(eq);
+
+            if (shouldFly) {
+                const targetZoom = Math.max(map.getZoom(), 17);
+                map.flyTo([eq._lat, eq._lng], targetZoom, {
+                    animate: true,
+                    duration: 0.75
+                });
+            }
+
+            renderVisibleEquipamentos();
+        }
+
+        function openDetailSheet(eq) {
+            const sheet = document.getElementById('detail-sheet');
+            const eqTitle = document.getElementById('detail-equipamento');
+            const circEl = document.getElementById('detail-circuito');
+            const distPill = document.getElementById('detail-distance-pill');
+            const distEl = document.getElementById('detail-distance');
+            const coordsEl = document.getElementById('detail-coords');
+            const gmapsLink = document.getElementById('detail-gmaps-link');
+            const gpsBtn = document.getElementById('btn-my-location');
+            const badge = document.getElementById('subtle-badge');
+
+            eqTitle.textContent = eq._eqStr || 'Equipamento sem código';
+            circEl.textContent = eq._circStr || 'Não informado';
+            coordsEl.textContent = `${eq._lat.toFixed(6)}, ${eq._lng.toFixed(6)}`;
+            gmapsLink.href = `https://www.google.com/maps/dir/?api=1&destination=${eq._lat},${eq._lng}`;
+
+            if (userLat !== null && userLng !== null) {
+                const meters = calculateDistanceMeters(userLat, userLng, eq._lat, eq._lng);
+                distEl.textContent = formatDistance(meters);
+                distPill.style.display = 'inline-flex';
+            } else {
+                distPill.style.display = 'none';
+            }
+
+            sheet.classList.add('open');
+            gpsBtn.classList.add('shifted-up');
+            badge.classList.add('shifted-up');
+        }
+
+        function closeDetailSheet() {
+            const sheet = document.getElementById('detail-sheet');
+            const gpsBtn = document.getElementById('btn-my-location');
+            const badge = document.getElementById('subtle-badge');
+
+            sheet.classList.remove('open');
+            gpsBtn.classList.remove('shifted-up');
+            badge.classList.remove('shifted-up');
+
+            if (selectedEquipamento) {
+                selectedEquipamento = null;
+                selectedMarkerLayer.clearLayers();
+                renderVisibleEquipamentos();
+            }
+        }
+
+        /**
+         * =====================================================================
+         * 6. BUSCA INSTANTÂNEA POR EQUIPAMENTO OU CIRCUITO (28.859+ REGISTROS)
+         * =====================================================================
+         */
+        function initSearchUI() {
+            const input = document.getElementById('search-input');
+            const clearBtn = document.getElementById('search-clear-btn');
+            const resultsBox = document.getElementById('search-results');
+            const wrapper = document.getElementById('search-wrapper');
+
+            let debounceTimer = null;
+
+            const executeSearch = () => {
+                const rawQuery = input.value.trim();
+                clearBtn.classList.toggle('visible', rawQuery.length > 0);
+
+                if (!rawQuery) {
+                    resultsBox.classList.remove('open');
+                    resultsBox.innerHTML = '';
+                    return;
+                }
+
+                const q = rawQuery.toLowerCase();
+                const exactMatches = [];
+                const prefixMatches = [];
+                const partialMatches = [];
+
+                for (let i = 0; i < validEquipamentos.length; i++) {
+                    const item = validEquipamentos[i];
+                    if (item._eqLower === q) {
+                        exactMatches.push(item);
+                    } else if (item._eqLower.startsWith(q)) {
+                        prefixMatches.push(item);
+                    } else if (item._eqLower.includes(q) || item._circLower.includes(q)) {
+                        partialMatches.push(item);
+                    }
+
+                    if (exactMatches.length + prefixMatches.length >= MAX_SEARCH_RESULTS * 3 && q.length >= 3) {
+                        break;
+                    }
+                }
+
+                let combined = exactMatches.concat(prefixMatches, partialMatches);
+
+                // Ordena por proximidade do aparelho quando o GPS estiver ativo
+                if (userLat !== null && userLng !== null && combined.length > 1) {
+                    const topPool = combined.slice(0, 120);
+                    topPool.sort((a, b) => {
+                        const dA = (a._lat - userLat) ** 2 + (a._lng - userLng) ** 2;
+                        const dB = (b._lat - userLat) ** 2 + (b._lng - userLng) ** 2;
+                        return dA - dB;
+                    });
+                    combined = topPool;
+                }
+
+                renderSearchDropdown(combined.slice(0, MAX_SEARCH_RESULTS), rawQuery);
+            };
+
+            input.addEventListener('input', () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(executeSearch, 65);
+            });
+
+            input.addEventListener('focus', () => {
+                if (input.value.trim().length > 0) {
+                    executeSearch();
+                }
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const firstItem = resultsBox.querySelector('.result-item');
+                    if (firstItem) firstItem.click();
+                }
+            });
+
+            clearBtn.addEventListener('click', () => {
+                input.value = '';
+                clearBtn.classList.remove('visible');
+                resultsBox.classList.remove('open');
+                resultsBox.innerHTML = '';
+                input.focus();
+            });
+
+            document.addEventListener('pointerdown', (e) => {
+                if (!wrapper.contains(e.target)) {
+                    resultsBox.classList.remove('open');
+                }
+            });
+        }
+
+        function renderSearchDropdown(results, query) {
+            const resultsBox = document.getElementById('search-results');
+            const input = document.getElementById('search-input');
+
+            if (results.length === 0) {
+                resultsBox.innerHTML = `<div class="search-empty">Nenhum equipamento encontrado para "<strong>${escapeHTML(query)}</strong>"</div>`;
+                resultsBox.classList.add('open');
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+
+            for (let i = 0; i < results.length; i++) {
+                const eq = results[i];
+                const row = document.createElement('div');
+                row.className = 'result-item';
+                row.setAttribute('role', 'option');
+
+                let distBadge = '';
+                if (userLat !== null && userLng !== null) {
+                    const meters = calculateDistanceMeters(userLat, userLng, eq._lat, eq._lng);
+                    distBadge = `<span class="result-dist">${formatDistance(meters)}</span>`;
+                }
+
+                row.innerHTML = `
+                    <div class="result-info">
+                        <span class="result-code">⚡ ${escapeHTML(eq._eqStr || 'Sem código')}</span>
+                        <span class="result-circuit">Circuito: ${escapeHTML(eq._circStr || 'N/I')}</span>
+                    </div>
+                    <div class="result-meta">
+                        ${distBadge}
+                        <span class="result-go">Ir para item →</span>
+                    </div>
+                `;
+
+                row.addEventListener('click', () => {
+                    input.value = eq._eqStr;
+                    input.blur();
+                    resultsBox.classList.remove('open');
+                    selectAndFocusEquipamento(eq, true);
+                });
+
+                fragment.appendChild(row);
+            }
+
+            resultsBox.innerHTML = '';
+            resultsBox.appendChild(fragment);
+            resultsBox.classList.add('open');
+        }
+
+        /**
+         * =====================================================================
+         * 7. GEOLOCALIZAÇÃO IMEDIATA AO ENTRAR + RASTREAMENTO CONTÍNUO
+         * =====================================================================
+         */
+        function updateUserPositionOnMap(latitude, longitude, accuracy, shouldCenter = false, zoomLevel = 16) {
+            userLat = latitude;
+            userLng = longitude;
+            const latlng = [latitude, longitude];
+
+            if (!userMarker) {
+                const gpsIcon = L.divIcon({
+                    className: '',
+                    html: '<div class="user-gps-dot"></div>',
+                    iconSize: [17, 17],
+                    iconAnchor: [8.5, 8.5]
+                });
+                userMarker = L.marker(latlng, { icon: gpsIcon, zIndexOffset: 1000 }).addTo(map);
+                userAccuracyCircle = L.circle(latlng, {
+                    radius: accuracy || 25,
+                    color: '#2563eb',
+                    fillColor: '#2563eb',
+                    fillOpacity: 0.14,
+                    weight: 1.2
+                }).addTo(map);
+            } else {
+                userMarker.setLatLng(latlng);
+                userAccuracyCircle.setLatLng(latlng);
+                if (accuracy) userAccuracyCircle.setRadius(accuracy);
+            }
+
+            // Atualiza distância no cartão caso esteja aberto
+            if (selectedEquipamento) {
+                const meters = calculateDistanceMeters(userLat, userLng, selectedEquipamento._lat, selectedEquipamento._lng);
+                document.getElementById('detail-distance').textContent = formatDistance(meters);
+                document.getElementById('detail-distance-pill').style.display = 'inline-flex';
+            }
+
+            if (shouldCenter) {
+                hasInitialGPSCentered = true;
+                map.setView(latlng, zoomLevel, { animate: true });
+            }
+        }
+
+        function initGeolocation() {
+            const btnLocation = document.getElementById('btn-my-location');
+
+            btnLocation.addEventListener('click', () => {
+                if (userLat !== null && userLng !== null) {
+                    map.flyTo([userLat, userLng], 17, { animate: true, duration: 0.65 });
+                    showBadge('Centralizado na sua localização atual', 2000);
+                } else {
+                    requestImmediatePosition(true);
+                }
+            });
+
+            if (!('geolocation' in navigator)) {
+                showBadge('GPS não suportado neste navegador', 3500);
+                return;
+            }
+
+            requestImmediatePosition(true);
+
+            navigator.geolocation.watchPosition(
+                (pos) => {
+                    const { latitude, longitude, accuracy } = pos.coords;
+                    const needsFirstCenter = !hasInitialGPSCentered;
+                    updateUserPositionOnMap(latitude, longitude, accuracy, needsFirstCenter, 16);
+                },
+                () => {},
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 4000,
+                    timeout: 15000
+                }
+            );
+        }
+
+        function requestImmediatePosition(centerOnSuccess) {
+            const btnLocation = document.getElementById('btn-my-location');
+            if (!('geolocation' in navigator)) return;
+
+            btnLocation.classList.add('locating');
+
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    btnLocation.classList.remove('locating');
+                    const { latitude, longitude, accuracy } = pos.coords;
+                    updateUserPositionOnMap(latitude, longitude, accuracy, centerOnSuccess, 16);
+                },
+                (err) => {
+                    btnLocation.classList.remove('locating');
+                    if (err && err.code === 1) {
+                        showBadge('Permissão de GPS negada — exibindo mapa padrão', 3600);
+                    } else {
+                        showBadge('Não foi possível obter o GPS agora', 3000);
+                    }
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        }
+
+        /**
+         * =====================================================================
+         * 8. INICIALIZAÇÃO DO MAPA & EVENTOS
+         * =====================================================================
+         */
+        function initApp() {
+            if (typeof L === 'undefined') {
+                showBadge('Erro ao carregar biblioteca de mapa. Verifique a conexão.', 5000);
+                return;
+            }
+
+            trafoDefaultIcon = createTransformerDivIcon(false);
+            trafoSelectedIcon = createTransformerDivIcon(true);
+
+            const mapEl = document.getElementById('map');
+
+            map = L.map(mapEl, {
+                zoomControl: false,
+                attributionControl: false,
+                doubleClickZoom: false
+            }).setView([-23.5505, -46.6333], 15);
+
+            streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19
+            }).addTo(map);
+
+            satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19
+            });
+
+            visibleMarkersLayer = L.layerGroup().addTo(map);
+            selectedMarkerLayer = L.layerGroup().addTo(map);
+
+            // Toque duplo alterna entre Ruas e Satélite
+            map.on('dblclick', () => {
+                if (isSatellite) {
+                    map.removeLayer(satelliteLayer);
+                    streetLayer.addTo(map);
+                    isSatellite = false;
+                    showBadge('Mapa: Ruas', 1800);
+                } else {
+                    map.removeLayer(streetLayer);
+                    satelliteLayer.addTo(map);
+                    isSatellite = true;
+                    showBadge('Mapa: Satélite', 1800);
+                }
+            });
+
+            // Re-renderiza apenas os marcadores visíveis ao mover ou dar zoom
+            let renderTimer = null;
+            const scheduleRender = () => {
+                clearTimeout(renderTimer);
+                renderTimer = setTimeout(renderVisibleEquipamentos, 40);
+            };
+
+            map.on('moveend', scheduleRender);
+            map.on('zoomend', scheduleRender);
+
+            document.getElementById('detail-close').addEventListener('click', closeDetailSheet);
+
+            setTimeout(() => { if (map) map.invalidateSize(); }, 50);
+            setTimeout(() => { if (map) map.invalidateSize(); }, 300);
+
+            if (typeof ResizeObserver !== 'undefined') {
+                new ResizeObserver(() => {
+                    if (map) map.invalidateSize();
+                }).observe(mapEl);
+            }
+
+            window.addEventListener('resize', () => {
+                if (map) map.invalidateSize();
+            });
+
+            initSearchUI();
+            initManualJsonPicker();
+            initGeolocation();
+            loadExternalEquipamentos();
+        }
+
+        /**
+         * =====================================================================
+         * 9. UTILITÁRIOS (DISTÂNCIA HAVERSINE, TOAST E ESCAPE HTML)
+         * =====================================================================
+         */
+        function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const toRad = (deg) => deg * (Math.PI / 180);
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+
+        function formatDistance(meters) {
+            if (meters < 1000) {
+                return `${Math.round(meters)} m`;
+            }
+            return `${(meters / 1000).toFixed(1).replace('.', ',')} km`;
+        }
+
+        let badgeTimer = null;
+        function showBadge(text, autoHideMs = 0) {
+            const el = document.getElementById('subtle-badge');
+            el.textContent = text;
+            el.classList.add('visible');
+            clearTimeout(badgeTimer);
+            if (autoHideMs > 0) {
+                badgeTimer = setTimeout(() => {
+                    el.classList.remove('visible');
+                }, autoHideMs);
+            }
+        }
+
+        function hideBadge() {
+            const el = document.getElementById('subtle-badge');
+            el.classList.remove('visible');
+        }
+
+        function escapeHTML(str) {
+            return String(str).replace(/[&<>"']/g, (m) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[m]));
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            initApp();
+        }
+    </script>
+</body>
+</html>
+```
